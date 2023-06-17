@@ -6,7 +6,7 @@ from aiwolfpy.gameinfoparser import GameInfoParser
 # decorator / proxy
 class AgentProxy(object):
 
-    def __init__(self, agent, my_name, host_name, port, role, logger, parse="pandas"):
+    def __init__(self, agent, my_name, host_name, port, role, logger, parse="pandas", total_games=5):
         self.agent = agent
         self.my_name = my_name
         self.host_name = host_name
@@ -18,6 +18,9 @@ class AgentProxy(object):
         self.parse_choice = parse
         self.logger = logger
         self.len_whisper_list = 0
+        self.total_games = total_games
+        self.game_start_count = 0
+        self.game_end_count = 0
 
     # parse and run
     def initialize_agent(self, game_info, game_setting):
@@ -89,9 +92,11 @@ class AgentProxy(object):
         if request == 'INITIALIZE':
             game_setting = json_received['gameSetting']
             self.logger.log(1, game_setting)
+            self.game_start_count += 1 #ゲームが始まったらカウントを増やす
         else:
             game_setting = None
 
+        #print("request:", request)
         # run_request
         if request == 'NAME':
             return self.my_name
@@ -111,6 +116,8 @@ class AgentProxy(object):
                 return None
             elif request == 'FINISH':
                 self.agent.finish()
+                if self.game_start_count -1 == self.game_end_count:
+                    self.game_end_count += 1 #ゲームが終わったらカウントを増やす
                 return None
             elif request == 'VOTE':
                 return json.dumps({'agentIdx': int(self.agent.vote())}, separators=(',', ':'))
@@ -128,35 +135,86 @@ class AgentProxy(object):
     def connect_server(self):
         # socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.settimeout(0.001)
+        self.sock.settimeout(10)
         # connect
         self.sock.connect((self.host_name, self.port))
-        line = ''
+        # line = ''
 
-        while True:
-
+        #
+        while self.game_end_count < self.total_games:
             try:
-                line += self.sock.recv(8192).decode('utf-8')
-                if line == '':
+                response = self.receive()
+                if response == "":
                     break
-            except socket.timeout:
-                pass
+            
+                line_list = response.split("\n")
+                for one_line in line_list:
+                    if len(one_line) > 0:
+                        #print("one_line:",one_line)
+                        json_received = json.loads(one_line)
+                        self.send_response(json_received)
+            except (ConnectionResetError,ConnectionError,ConnectionAbortedError,ConnectionRefusedError) as e:
+                print(e)
+                break
+            except RuntimeError as e:
+                print(e)
+                break
+        # while True:
+        #     try:
+        #         line += self.sock.recv(8192).decode('utf-8')
+        #         if line == '':
+        #             break
+        #     except socket.timeout:
+        #         pass
 
-            line_list = line.split("\n", 1)
+        #     line_list = line.split("\n", 1)
 
-            for i in range(len(line_list) - 1):
-                if len(line_list[i]) > 0:
-                    json_received = json.loads(line_list[i])
-                    self.send_response(json_received)
-                line = line_list[-1]
+        #     for i in range(len(line_list) - 1):
+        #         if len(line_list[i]) > 0:
+        #             json_received = json.loads(line_list[i])
+        #             self.send_response(json_received)
+        #         line = line_list[-1]
 
-            try:
-                # check if valid json
-                json_received = json.loads(line)
-                self.send_response(json_received)
-                line = ''
-            except ValueError:
-                pass
+        #     try:
+        #         # check if valid json
+        #         json_received = json.loads(line)
+        #         self.send_response(json_received)
+        #         line = ''
+        #     except ValueError:
+        #         pass
 
         self.sock.close()
+                
         return None
+
+    def is_json_complate(self,responses:bytes) -> bool:
+        try:
+            responses = responses.decode("utf-8")
+        except:
+            return False
+        
+        if responses == "":
+            return False
+
+        cnt = 0
+
+        for word in responses:
+            if word == "{":
+                cnt += 1
+            elif word == "}":
+                cnt -= 1
+        
+        return cnt == 0
+    
+    def receive(self) -> str:
+        responses = b""
+        while not self.is_json_complate(responses=responses):
+            
+            response = self.sock.recv(8192)
+            #print("response:",response)
+            # if response == b"":
+            #     raise RuntimeError("socket connection broken")
+            
+            responses += response
+
+        return responses.decode("utf-8")
