@@ -138,50 +138,17 @@ class AgentProxy(object):
         self.sock.settimeout(10)
         # connect
         self.sock.connect((self.host_name, self.port))
-        # line = ''
-
-        #
+        
         while self.game_end_count < self.total_games:
-            try:
-                response = self.receive()
-                if response == "":
-                    break
-            
-                line_list = response.split("\n")
-                for one_line in line_list:
-                    if len(one_line) > 0:
-                        #print("one_line:",one_line)
-                        json_received = json.loads(one_line)
-                        self.send_response(json_received)
-            except (ConnectionResetError,ConnectionError,ConnectionAbortedError,ConnectionRefusedError) as e:
-                print(e)
+            response = self.receive()
+            if response == "":
                 break
-            except RuntimeError as e:
-                print(e)
-                break
-        # while True:
-        #     try:
-        #         line += self.sock.recv(8192).decode('utf-8')
-        #         if line == '':
-        #             break
-        #     except socket.timeout:
-        #         pass
-
-        #     line_list = line.split("\n", 1)
-
-        #     for i in range(len(line_list) - 1):
-        #         if len(line_list[i]) > 0:
-        #             json_received = json.loads(line_list[i])
-        #             self.send_response(json_received)
-        #         line = line_list[-1]
-
-        #     try:
-        #         # check if valid json
-        #         json_received = json.loads(line)
-        #         self.send_response(json_received)
-        #         line = ''
-        #     except ValueError:
-        #         pass
+        
+            line_list = response.split("\n")
+            for one_line in line_list:
+                if len(one_line) > 0:
+                    json_received = json.loads(one_line)
+                    self.send_response(json_received)
 
         self.sock.close()
                 
@@ -208,12 +175,17 @@ class AgentProxy(object):
     
     def receive(self) -> str:
         responses = b""
-        while not self.is_json_complate(responses=responses):
-            
+        retry_count = 0
+        max_retry_count = 1e5
+        while not self.is_json_complate(responses=responses):  
             response = self.sock.recv(8192)
-            #print("response:",response)
-            # if response == b"":
-            #     raise RuntimeError("socket connection broken")
+            #待機時間が長いときは、一定回数以上のリトライを許容する        
+            if response == b"":
+                retry_count += 1
+                if retry_count > max_retry_count:
+                    raise RuntimeError("socket connection broken")
+            else:
+                retry_count = 0
             
             responses += response
 
