@@ -6,7 +6,7 @@ from aiwolfpy.gameinfoparser import GameInfoParser
 # decorator / proxy
 class AgentProxy(object):
 
-    def __init__(self, agent, my_name, host_name, port, role, logger, parse="pandas", total_games=5):
+    def __init__(self, agent, my_name, host_name, port, role, logger, parse="pandas", total_games=5,socket_timeout=300):
         self.agent = agent
         self.my_name = my_name
         self.host_name = host_name
@@ -19,6 +19,7 @@ class AgentProxy(object):
         self.logger = logger
         self.len_whisper_list = 0
         self.total_games = total_games
+        self.socket_timeout = socket_timeout
         self.game_start_count = 0
         self.game_end_count = 0
 
@@ -135,7 +136,7 @@ class AgentProxy(object):
     def connect_server(self):
         # socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.settimeout(10)
+        self.sock.settimeout(self.socket_timeout)
         # connect
         self.sock.connect((self.host_name, self.port))
         
